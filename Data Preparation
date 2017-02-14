@@ -1,0 +1,667 @@
+libname sasdata "C:\Rohit\AGS Analytics\Scene 7 Propensity\sasdata";
+
+%let input= C:\Rohit\AGS Analytics\Scene 7 Propensity\input\ ;
+%let file_type = csv; 
+
+%let BOB_base = BOB_15Nov2013;
+%let BOB_check  = BoB_28Nov2014;
+%let open_cases= Open_Cases_13Apr2015;
+%let cust_ten= aa_st_date_13Apr2015;
+
+%let ref_date= '15Nov2013'd;
+
+%let adir_credit_aging= adir_credit_aging_02Dec2013;
+%let adus_credit_aging= adus_credit_aging_02Dec2013;
+
+%let s7_usage= s7_usage_Nov2013;
+%let sc_usage=Analytics_nov2013;
+%let tnt_usage=target_final_nov13;
+%let licensing_data= Selling_AA_AT_AEM_24032015;
+%let cons_train_fy13= cons_train_bookings;
+
+%let bob_nov12= bob_nov12;
+
+
+
+%let TAP= S7_TAP;
+%let NPS= NPS_FY14;
+%let CSAT= CSAT_Q4FY13;
+%let Feature_data= Feature_usage_q4fy14;
+%let Feature_thrshld= Feature_Thresholds;
+%let Feature_desc= Feature_usage_desc;
+
+
+
+
+
+
+* Macro to import a CSV file;
+ 
+%macro import_file(file_name,path,file_type );
+
+	proc import datafile="&path.&file_name..&file_type."
+	out=&file_name._o
+			dbms= &file_type. replace;
+	 		getnames=yes;
+			guessingrows=32767;
+	run;
+
+%mend import_file;
+
+
+%import_file(&BOB_base.,&input.,&file_type.);
+%import_file(&BOB_check.,&input.,&file_type.);
+
+
+
+
+Data &BOB_base._scene7 ( Keep = eccid End_User_Name geo material material_name product_name product_family pmbu asv_usd net_value rbo_bcategory drop = End_User_ID );
+	set &BOB_base._o (where = ( pmbu = "Adobe Experience Mgr" and product_family= "Scene7"
+					and rbo_bcategory =  "Technology" ));
+	eccid = End_User_ID*1;
+run;
+
+
+
+proc sort data= &BOB_base._scene7 out= &BOB_base._scene7_eccid(keep=eccid) nodupkey;
+by eccid;
+run;
+
+
+
+Data &BOB_check._scene7 ( Keep = eccid End_User_Name geo material material_name product_name product_family pmbu asv_usd net_value rbo_bcategory drop = End_User_ID );
+	set &BOB_check._o (where = ( pmbu = "Adobe Experience Mgr" and product_family= "Scene7"
+					and rbo_bcategory =  "Technology" ));
+	eccid = End_User_ID*1;
+run;
+
+
+
+proc sort data= &BOB_check._scene7 out= &BOB_check._scene7_eccid(keep=eccid) nodupkey;
+by eccid;
+run;
+
+
+/* Checking the Lost Scene 7 accounts */
+
+
+Proc sql;
+create table eccid_lost_track as
+select a.eccid as end_user_id_15nov13,b.eccid as end_user_id_28nov14
+/*if end_user_id_28nov14 eq . then lost=1 else lost=0*/
+from
+&BOB_base._scene7_eccid as a
+left join
+&BOB_check._scene7_eccid as b
+on a.eccid = b.eccid;
+quit;
+
+
+
+data sasdata.eccid_lvl_lost;
+set eccid_lost_track;
+
+if end_user_id_28nov14 eq . then lost=1;
+else lost=0;
+run;
+
+
+/* Checking the number of lost accounts */
+
+proc freq data= sasdata.eccid_lvl_lost;
+tables lost/list missing;
+run;
+
+
+
+/* Calculating the solution Penetration and total investment */
+
+
+proc sql;
+create table sasdata.total_inv_sol_pen as
+select End_User_ID, 
+count(distinct pmbu) as solution_penetration
+,sum(asv_usd) as total_investment
+from &BOB_base._o
+group by 1;
+quit;
+
+
+
+/* Calculating scene7 investment */
+ 
+proc sql;
+create table sasdata.s7_investment as
+select eccid,
+sum(asv_usd) as s7_inv_2013 
+from
+&BOB_base._scene7
+group by 1;
+quit;
+
+
+
+/* Open Cases */
+
+%import_file(&open_cases.,&input.,&file_type.);
+
+
+
+proc contents data= &open_cases._o;
+run;
+
+
+
+data open_cases;
+set &open_cases._o(keep= eccid product fm opencases opensincedays where=(fm  >= '01dec2012'd and fm <= '30Nov2013'd and eccid>0 and product='Adobe Experience Mgr'));
+if opencases>0 and opensincedays=0 then opensincedays=1;
+run;
+
+
+/**/
+/**/
+/*proc freq data= open_cases;*/
+/*tables fm/list missing;*/
+/*run;*/
+
+
+proc summary data= open_cases nway missing;
+class eccid;
+var opencases;
+output out= sasdata.open_cases_final (drop=_:) sum(opencases)=opencases max(opensincedays)=max_oca;
+run;
+
+
+
+
+/* Customer Tenure */
+
+%import_file(&cust_ten.,&input.,&file_type.);
+
+
+data sasdata.cust_tenure_s7;
+set AA_ST_DATE_13APR2015_O(where=(productname="Scene7"));
+format first_start_date date9.;
+first_start_date = mdy(first_st_mnth, first_st_day, first_st_yr);
+cust_tenure= intck('month',first_start_date,&ref_date.);
+run;
+
+
+
+data cust_tenure;
+set AA_ST_DATE_13APR2015_O;
+format first_start_date date9.;
+first_start_date = mdy(first_st_mnth, first_st_day, first_st_yr);
+cust_tenure= intck('month',first_start_date,&ref_date.);
+run;
+
+
+proc sql;
+create table sasdata.cust_tenure_final as
+select enduserid, max(cust_tenure) as overall_cust_tenure
+from cust_tenure
+group by 1;
+quit;
+
+
+
+
+/* Invoicing Data */
+
+***********************************************************************************************************
+									Credit Aging Data from Araceli
+**********************************************************************************************************;
+
+
+%import_file(&adir_credit_aging.,&input.,&file_type.);
+%import_file(&adus_credit_aging.,&input.,&file_type.);
+
+
+	data &adir_credit_aging._mod(drop=cu_no current Jan_30 _31_60 _61_90 _90_more Total_OI ae_h: am_h:);
+	 	set &adir_credit_aging._o;
+		Total_Outstanding =1*compress(Total_OI,",");
+		bucket_curr=1*compress(current,",");
+	    bucket_1to30 =1*compress(Jan_30,",");
+	    bucket_31to60  =1*compress(_31___60,",");
+	    bucket_61to90 =1*compress(_61___90,",");
+	    bucket_90plus  =1*compress(_90___more,",");
+		ecc_id=put(cu_no,10.);
+	run;
+
+	
+	data &adus_credit_aging._mod(drop=cu_no current Jan_30 _31_60 _61_90 _90_more Total_OI ae_h: am_h:);
+	 	set &adus_credit_aging._o;
+		Total_Outstanding =1*compress(Total_OI,",");
+		bucket_curr=1*compress(current,",");
+	    bucket_1to30 =1*compress(Jan_30,",");
+	    bucket_31to60  =1*compress(_31___60,",");
+	    bucket_61to90 =1*compress(_61___90,",");
+	    bucket_90plus  =1*compress(_90___more,",");
+		ecc_id=put(cu_no,10.);
+	run;
+
+	
+data all_aging (where=(total_outstanding>0));
+	length ecc_id $10.;
+	set &adir_credit_aging._mod(in=ir keep=ecc_id bill_doc customer_name CRAnl Acc_Doc Due_Date  Arrear Total_Outstanding 
+											bucket_curr bucket_1to30 bucket_31to60	bucket_61to90 bucket_90plus) 
+		&adus_credit_aging._mod(in=us keep=ecc_id bill_doc customer_name CRAnl Acc_Doc Due_Date  Arrear Total_Outstanding 
+											bucket_curr bucket_1to30 bucket_31to60	bucket_61to90 bucket_90plus);
+		customer_name=propcase(customer_name);
+		eccid=ecc_id*1;
+	
+run;
+
+
+proc sort data=all_aging out=all_aging;
+  by eccid;
+run;
+
+
+
+proc summary data=all_aging nway missing;
+  by eccid;
+  var total_outstanding bucket:;
+  output out=sasdata.aging_ecc_summ (drop=_:) sum=;
+run;
+
+/**/
+/*proc sort data=sasdata.aging_ecc_summ out=test nodupkey;*/
+/*  by ecc_id;*/
+/*run;*/
+
+
+
+/* S7 Usage Data- Nov 2013 */
+
+%import_file(&s7_usage.,&input.,&file_type.);
+
+
+data sasdata.s7_usage_final;
+set s7_usage_Nov2013_o(keep= eccid abs_status rel_status overall_status rename=(overall_status=s7_overall_status abs_status=s7_abs_status rel_status=s7_rel_status) ) ;
+run;
+
+
+
+
+/* SC Usage Data- Nov 2013 */
+
+%import_file(&sc_usage.,&input.,&file_type.);
+
+
+data sasdata.sc_usage_final(drop =ecc_id);
+set Analytics_nov2013_o(keep= ecc_id prod_usage_status servercall_status overall_usage_status where=(ecc_id ne 'All') rename=(prod_usage_status=sc_prod_usage_status servercall_status=sc_servercall_status overall_usage_status=sc_overall_usage_status)) ;
+end_user_id=ecc_id*1;
+run;
+
+
+
+
+/* TNT Usage Data- Nov 2013 */
+
+
+%import_file(&tnt_usage.,&input.,&file_type.);
+
+
+
+data sasdata.tnt_usage_final;
+set target_final_nov13_o(keep= eccid camp_status mbox_utilisation_status overall_status rename=(camp_status=tnt_camp_status mbox_utilisation_status= tnt_mbox_utilisation_status overall_status=tnt_overall_status )) ;
+run;
+
+
+/* Licensing Data */
+
+%import_file(&licensing_data.,&input.,&file_type.);
+
+
+
+data licensing_data;
+set Selling_AA_AT_AEM_24032015_o(where=(Product_Management_Business_Unit= "Adobe Experience Mgr" and Ord_Fisc_Year_Period < '01dec2013'd));
+run;
+
+
+proc sql;
+create table sasdata.licensing_data_final as
+select end_user_id, sum(completed_sales) as lic_inv
+from licensing_data
+group by 1;
+quit;
+
+
+data sasdata.licensing_data_final;
+set sasdata.licensing_data_final;
+eccid=end_user_id*1;
+if lic_inv>0 then lic_cust=1;
+else lic_cust=0;
+run;
+
+
+
+%import_file(&BOB_nov12.,&input.,&file_type.);
+
+
+
+data bob_nov12_scene7;
+set bob_nov12_o(where=(pmbu="Adobe Experience Mgr" and product_family="Scene7" and rbo_bcategory="Technology"));
+run;
+
+
+proc sql;
+create table s7_inv_2012 as
+select end_user_id as eccid,
+sum(asv_usd) as s7_inv_2012
+from bob_nov12_scene7
+group by 1;
+quit;
+
+
+
+proc sql;
+create table down_sell_inter as
+select a.eccid,a.s7_inv_2013,b.s7_inv_2012
+from
+sasdata.s7_investment as a
+left join 
+s7_inv_2012 as b
+on a.eccid=b.eccid;
+quit;
+
+
+
+data sasdata.down_sell_tagging;
+set down_sell_inter;
+if s7_inv_2012= . then downsell_ind="Not present in 2012";
+else if s7_inv_2012>s7_inv_2013 then downsell_ind="Yes";
+else downsell_ind="No";
+run;
+
+
+
+/* Importiing Consulting/Training Bookings for FY 13 */
+
+%import_file(&cons_train_fy13.,&input.,&file_type.);
+
+
+
+proc sql;
+create table cons_inv as
+select End_User_ID_for_Licensing,
+sum(net_value) as total_cons_investment
+from Cons_train_bookings_o
+where compress(group)="Consulting"
+group by 1;
+quit;
+
+
+proc sql;
+create table train_inv as
+select End_User_ID_for_Licensing,
+sum(net_value) as total_train_investment
+from Cons_train_bookings_o
+where compress(group)="Training"
+group by 1;
+quit;
+
+
+
+/**/
+/*proc freq data= sasdata.down_sell_tagging;*/
+/*tables downsell_ind/list missing;*/
+/*run;*/
+
+
+
+/* Check Level of data for all datasets */
+proc sort data= sasdata.down_sell_tagging  out= temp nodupkey;
+by eccid;
+run;
+
+
+/* Check Datatypes for end users in all datasets */
+proc contents data= sasdata.sc_usage_final;
+run;
+
+
+
+/* Merging all the datasets to create the masterdata */
+
+proc sql;
+create table masterdata as
+select *
+from
+sasdata.eccid_lvl_lost as a /* end users under consideration */
+left join
+sasdata.total_inv_sol_pen as b /* Total DMA investment */
+on a.end_user_id_15nov13=b.end_user_id
+left join
+sasdata.s7_investment as c /* Total S7 investment */
+on a.end_user_id_15nov13=c.eccid
+left join
+sasdata.open_cases_final as d /* Open Cases */
+on a.end_user_id_15nov13=d.eccid
+left join
+sasdata.cust_tenure_s7 as e /* Customer Tenure - S7 */
+on a.end_user_id_15nov13=e.enduserid
+left join
+sasdata.cust_tenure_final as f /* Customer Tenure - All DMA */
+on a.end_user_id_15nov13=f.enduserid
+left join
+sasdata.aging_ecc_summ as g /* Credit Invoicing */
+on a.end_user_id_15nov13=g.eccid
+left join
+sasdata.s7_usage_final as h /* S7 Usage */
+on a.end_user_id_15nov13=h.eccid
+left join
+sasdata.sc_usage_final as i /* SC Usage */
+on a.end_user_id_15nov13=i.end_user_id
+left join
+sasdata.tnt_usage_final as j /* TNT Usage */
+on a.end_user_id_15nov13=j.eccid
+left join
+sasdata.licensing_data_final as k /* Licensing */
+on a.end_user_id_15nov13=k.eccid
+left join
+sasdata.down_sell_tagging as l /* Downsell */
+on a.end_user_id_15nov13=l.eccid
+left join
+cons_inv as m /* Consulting Investment */
+on a.end_user_id_15nov13=m.End_User_ID_for_Licensing
+left join
+train_inv as n /* Training Investment*/
+on a.end_user_id_15nov13=n.End_User_ID_for_Licensing;
+quit;
+
+
+/**/
+/*proc freq data= masterdata;*/
+/*tables total_cons_investment/list missing;*/
+/*run;*/
+
+
+/* Importing TAP Data */
+
+%import_file(&TAP.,&input.,&file_type.);
+
+
+data sasdata.s7_tap(rename=(AEM_Estimated_Remaining_Opportun=AEM_est_rem_opp_low) drop= DMA_EST_REMAINING_OPP_MED DMA_EST_TOT_OPP_MED var10);
+set s7_tap_o;
+run;
+
+
+/* Importing NPS Data */
+%import_file(&NPS.,&input.,&file_type.);
+
+
+/* Importing NPS Data */
+%import_file(&CSAT.,&input.,&file_type.);
+
+
+/* Importing Feature usage Data */
+%import_file(&Feature_data.,&input.,&file_type.);
+
+
+
+
+data Feature_usage_q4fy14(drop= Company	Catalog	GEO	Customer_Name_from_SF Admin Last_Modified);
+set Feature_usage_q4fy14_o;
+run;
+
+
+
+/* Summarizing the feature usage data at ECCID level */
+proc summary data=Feature_usage_q4fy14 ;
+        var 
+		Origin_GB_month Akamai_GB_month Total_Asset_Count	Video_Asset_Count	Static_Asset_Count	Vignette_Count	PDF_Count	EPS_Count	FXG_Count	Total_Sets_Count	Template_Count	eCatalog_Count	Image_Map_Count	CM_Use	RuleSet_Use	Manifest_Use	Secure_Preview_GB_	Media_Portal_Users	API_Usage	Batch_Set_Automation	Illustrator_Ingests	CDN_Cache_Invalidation	Auto_Crop	Path_to_mask	CSXS_Use	SPS_Desktop_Use	Manual_eCat_Creation	eCat_Search_Publish	PDF_to_eCat_Processing	Other_PDF_Processing	Viewer_Analytics_Use	Digimarc_Use	Flash_Viewer_Use	DHTML_Viewer_Use	HTML5_Viewer_Use	Legacy_Viewer_Use;
+        class eccid ;
+        output out=eccid_feature_lvl(where=(eccid ne .) drop= _:_)
+        sum=
+		Origin_GB_month Akamai_GB_month Total_Asset_Count	Video_Asset_Count	Static_Asset_Count	Vignette_Count	PDF_Count	EPS_Count	FXG_Count	Total_Sets_Count	Template_Count	eCatalog_Count	Image_Map_Count	CM_Use	RuleSet_Use	Manifest_Use	Secure_Preview_GB_	Media_Portal_Users	API_Usage	Batch_Set_Automation	Illustrator_Ingests	CDN_Cache_Invalidation	Auto_Crop	Path_to_mask	CSXS_Use	SPS_Desktop_Use	Manual_eCat_Creation	eCat_Search_Publish	PDF_to_eCat_Processing	Other_PDF_Processing	Viewer_Analytics_Use	Digimarc_Use	Flash_Viewer_Use	DHTML_Viewer_Use	HTML5_Viewer_Use	Legacy_Viewer_Use;
+run; 
+
+
+
+/* Importing Feature usage Thresholds */
+%import_file(&Feature_thrshld.,&input.,&file_type.);
+
+
+
+/* Creating Macro variables for feaute usage thresholds */
+data _null_;
+	set Feature_Thresholds_o;
+	if _n_=1 then do;
+call symput('Origin_GB_month',Origin_GB_month);
+call symput('Akamai_GB_month',Akamai_GB_month);
+call symput('Last_Modified',Last_Modified);
+call symput('Total_Asset_Count',Total_Asset_Count);
+call symput('Video_Asset_Count',Video_Asset_Count);
+call symput('Static_Asset_Count',Static_Asset_Count);
+call symput('Vignette_Count',Vignette_Count);
+call symput('PDF_Count',PDF_Count);
+call symput('EPS_Count',EPS_Count);
+call symput('FXG_Count',FXG_Count);
+call symput('Total_Sets_Count',Total_Sets_Count);
+call symput('Template_Count',Template_Count);
+call symput('eCatalog_Count',eCatalog_Count);
+call symput('Image_Map_Count',Image_Map_Count);
+call symput('CM_Use',CM_Use);
+call symput('RuleSet_Use',RuleSet_Use);
+call symput('Manifest_Use',Manifest_Use);
+call symput('Secure_Preview_GB_',Secure_Preview_GB_);
+call symput('Media_Portal_Users',Media_Portal_Users);
+call symput('API_Usage',API_Usage);
+call symput('Batch_Set_Automation',Batch_Set_Automation);
+call symput('Illustrator_Ingests',Illustrator_Ingests);
+call symput('CDN_Cache_Invalidation',CDN_Cache_Invalidation);
+call symput('Auto_Crop',Auto_Crop);
+call symput('Path_to_mask',Path_to_mask);
+call symput('CSXS_Use',CSXS_Use);
+call symput('SPS_Desktop_Use',SPS_Desktop_Use);
+call symput('Manual_eCat_Creation',Manual_eCat_Creation);
+call symput('eCat_Search_Publish',eCat_Search_Publish);
+call symput('PDF_to_eCat_Processing',PDF_to_eCat_Processing);
+call symput('Other_PDF_Processing',Other_PDF_Processing);
+call symput('Viewer_Analytics_Use',Viewer_Analytics_Use);
+call symput('Digimarc_Use',Digimarc_Use);
+call symput('Flash_Viewer_Use',Flash_Viewer_Use);
+call symput('DHTML_Viewer_Use',DHTML_Viewer_Use);
+call symput('HTML5_Viewer_Use',HTML5_Viewer_Use);
+call symput('Legacy_Viewer_Use',Legacy_Viewer_Use);
+
+	end;
+run;
+
+
+
+/* Checking the values of macro variables */
+
+%put 	&Origin_GB_month.	;
+%put 	&Akamai_GB_month.	;
+%put 	&Last_Modified.	;
+%put 	&Total_Asset_Count.	;
+%put 	&Video_Asset_Count.	;
+%put 	&Static_Asset_Count.	;
+%put 	&Vignette_Count.	;
+%put 	&PDF_Count.	;
+%put 	&EPS_Count.	;
+%put 	&FXG_Count.	;
+%put 	&Total_Sets_Count.	;
+%put 	&Template_Count.	;
+%put 	&eCatalog_Count.	;
+%put 	&Image_Map_Count.	;
+%put 	&CM_Use.	;
+%put 	&RuleSet_Use.	;
+%put 	&Manifest_Use.	;
+%put 	&Secure_Preview_GB_.	;
+%put 	&Media_Portal_Users.	;
+%put 	&API_Usage.	;
+%put 	&Batch_Set_Automation.	;
+%put 	&Illustrator_Ingests.	;
+%put 	&CDN_Cache_Invalidation.	;
+%put 	&Auto_Crop.	;
+%put 	&Path_to_mask.	;
+%put 	&CSXS_Use.	;
+%put 	&SPS_Desktop_Use.	;
+%put 	&Manual_eCat_Creation.	;
+%put 	&eCat_Search_Publish.	;
+%put 	&PDF_to_eCat_Processing.	;
+%put 	&Other_PDF_Processing.	;
+%put 	&Viewer_Analytics_Use.	;
+%put 	&Digimarc_Use.	;
+%put 	&Flash_Viewer_Use.	;
+%put 	&DHTML_Viewer_Use.	;
+%put 	&HTML5_Viewer_Use.	;
+%put 	&Legacy_Viewer_Use.	;
+
+
+
+
+
+
+
+data eccid_feature_lvl_final(keep= eccid customer_name ind_:);
+set eccid_feature_lvl;
+
+if	Origin_GB_month	>	&Origin_GB_month.	then 	ind_Origin_GB_month=	1;	else	ind_Origin_GB_month=	0;
+if	Akamai_GB_month	>	&Akamai_GB_month.	then 	ind_Akamai_GB_month=	1;	else	ind_Akamai_GB_month=	0;
+if	Total_Asset_Count	>	&Total_Asset_Count.	then 	ind_Total_Asset_Count=	1;	else	ind_Total_Asset_Count=	0;
+if	Video_Asset_Count	>	&Video_Asset_Count.	then 	ind_Video_Asset_Count=	1;	else	ind_Video_Asset_Count=	0;
+if	Static_Asset_Count	>	&Static_Asset_Count.	then 	ind_Static_Asset_Count=	1;	else	ind_Static_Asset_Count=	0;
+if	Vignette_Count	>	&Vignette_Count.	then 	ind_Vignette_Count=	1;	else	ind_Vignette_Count=	0;
+if	PDF_Count	>	&PDF_Count.	then 	ind_PDF_Count=	1;	else	ind_PDF_Count=	0;
+if	EPS_Count	>	&EPS_Count.	then 	ind_EPS_Count=	1;	else	ind_EPS_Count=	0;
+if	FXG_Count	>	&FXG_Count.	then 	ind_FXG_Count=	1;	else	ind_FXG_Count=	0;
+if	Total_Sets_Count	>	&Total_Sets_Count.	then 	ind_Total_Sets_Count=	1;	else	ind_Total_Sets_Count=	0;
+if	Template_Count	>	&Template_Count.	then 	ind_Template_Count=	1;	else	ind_Template_Count=	0;
+if	eCatalog_Count	>	&eCatalog_Count.	then 	ind_eCatalog_Count=	1;	else	ind_eCatalog_Count=	0;
+if	Image_Map_Count	>	&Image_Map_Count.	then 	ind_Image_Map_Count=	1;	else	ind_Image_Map_Count=	0;
+if	CM_Use	>	&CM_Use.	then 	ind_CM_Use=	1;	else	ind_CM_Use=	0;
+if	RuleSet_Use	>	&RuleSet_Use.	then 	ind_RuleSet_Use=	1;	else	ind_RuleSet_Use=	0;
+if	Manifest_Use	>	&Manifest_Use.	then 	ind_Manifest_Use=	1;	else	ind_Manifest_Use=	0;
+if	Secure_Preview_GB_	>	&Secure_Preview_GB_.	then 	ind_Secure_Preview_GB_=	1;	else	ind_Secure_Preview_GB_=	0;
+if	Media_Portal_Users	>	&Media_Portal_Users.	then 	ind_Media_Portal_Users=	1;	else	ind_Media_Portal_Users=	0;
+if	API_Usage	>	&API_Usage.	then 	ind_API_Usage=	1;	else	ind_API_Usage=	0;
+if	Batch_Set_Automation	>	&Batch_Set_Automation.	then 	ind_Batch_Set_Automation=	1;	else	ind_Batch_Set_Automation=	0;
+if	Illustrator_Ingests	>	&Illustrator_Ingests.	then 	ind_Illustrator_Ingests=	1;	else	ind_Illustrator_Ingests=	0;
+if	CDN_Cache_Invalidation	>	&CDN_Cache_Invalidation.	then 	ind_CDN_Cache_Invalidation=	1;	else	ind_CDN_Cache_Invalidation=	0;
+if	Auto_Crop	>	&Auto_Crop.	then 	ind_Auto_Crop=	1;	else	ind_Auto_Crop=	0;
+if	Path_to_mask	>	&Path_to_mask.	then 	ind_Path_to_mask=	1;	else	ind_Path_to_mask=	0;
+if	CSXS_Use	>	&CSXS_Use.	then 	ind_CSXS_Use=	1;	else	ind_CSXS_Use=	0;
+if	SPS_Desktop_Use	>	&SPS_Desktop_Use.	then 	ind_SPS_Desktop_Use=	1;	else	ind_SPS_Desktop_Use=	0;
+if	Manual_eCat_Creation	>	&Manual_eCat_Creation.	then 	ind_Manual_eCat_Creation=	1;	else	ind_Manual_eCat_Creation=	0;
+if	eCat_Search_Publish	>	&eCat_Search_Publish.	then 	ind_eCat_Search_Publish=	1;	else	ind_eCat_Search_Publish=	0;
+if	PDF_to_eCat_Processing	>	&PDF_to_eCat_Processing.	then 	ind_PDF_to_eCat_Processing=	1;	else	ind_PDF_to_eCat_Processing=	0;
+if	Other_PDF_Processing	>	&Other_PDF_Processing.	then 	ind_Other_PDF_Processing=	1;	else	ind_Other_PDF_Processing=	0;
+if	Viewer_Analytics_Use	>	&Viewer_Analytics_Use.	then 	ind_Viewer_Analytics_Use=	1;	else	ind_Viewer_Analytics_Use=	0;
+if	Digimarc_Use	>	&Digimarc_Use.	then 	ind_Digimarc_Use=	1;	else	ind_Digimarc_Use=	0;
+if	Flash_Viewer_Use	>	&Flash_Viewer_Use.	then 	ind_Flash_Viewer_Use=	1;	else	ind_Flash_Viewer_Use=	0;
+if	DHTML_Viewer_Use	>	&DHTML_Viewer_Use.	then 	ind_DHTML_Viewer_Use=	1;	else	ind_DHTML_Viewer_Use=	0;
+if	HTML5_Viewer_Use	>	&HTML5_Viewer_Use.	then 	ind_HTML5_Viewer_Use=	1;	else	ind_HTML5_Viewer_Use=	0;
+if	Legacy_Viewer_Use	>	&Legacy_Viewer_Use.	then 	ind_Legacy_Viewer_Use=	1;	else	ind_Legacy_Viewer_Use=	0;
+
+run;
+
+
+
+
+/* Importing Feature usage Thresholds */
+%import_file(&Feature_desc.,&input.,&file_type.);
