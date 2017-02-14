@@ -1,0 +1,172 @@
+/* Sampling: 80-20 split */
+PROC SURVEYSELECT DATA=sasdata.in_master OUT=sasdata.training METHOD=SRS
+  SAMPSIZE=590 SEED=1234567;
+  RUN;
+
+
+
+
+/* Modelling on Development Data */
+title 'Stepwise Regression';
+   proc logistic data=sasdata.training outest=logistic_out covout;
+   class s7_usage_active no_sol nps_pos  total_outstanding_flag in_downsell_yes open_cases;
+      model lost(event='1')=s7_usage_active no_sol nps_pos  total_outstanding_flag open_cases in_downsell_yes total_investment
+                   / selection=stepwise
+                     slentry=0.7
+                     slstay=0.75
+                     details;
+	
+	id end_user_id_15nov13;
+                     
+      output out=log_output p=pred;
+/*             predprob=(individual crossvalidate);*/
+   run;
+
+
+
+
+
+proc univariate data= log_output;
+var pred;
+output out= pred_dist pctlpre= p_ pctlpts= 10 20 30 40 50 60 70 80 90 100;
+run;
+
+
+
+
+
+data _null_;
+	set pred_dist;
+	if _n_=1 then do;
+call symput('p_10',p_10);
+call symput('p_20',p_20);
+call symput('p_30',p_30);
+call symput('p_40',p_40);
+call symput('p_50',p_50);
+call symput('p_60',p_60);
+call symput('p_70',p_70);
+call symput('p_80',p_80);
+call symput('p_90',p_90);
+call symput('p_100',p_100);
+end;
+run;
+
+
+
+
+data training_pred;
+set log_output;
+
+if pred<= &P_10. then decile=10;
+else if pred<= &P_20. then decile=9;
+else if pred<= &P_30. then decile=8;
+else if pred<= &P_40. then decile=7;
+else if pred<= &P_50. then decile=6;
+else if pred<= &P_60. then decile=5;
+else if pred<= &P_70. then decile=4;
+else if pred<= &P_80. then decile=3;
+else if pred<= &P_90. then decile=2;
+else decile=1;
+
+run;
+
+
+proc freq data= training_pred;
+tables decile/list missing;
+run;
+
+
+
+proc sql;
+select decile, 
+count(end_user_id_15nov13) as total_eccid,
+count(case when lost=1 then end_user_id_15nov13 end) as lost
+from training_pred
+group by 1;
+quit;
+
+
+
+/* Validation Dataset */
+
+proc sql;
+create table sasdata.validation as
+select *
+from sasdata.in_master
+where end_user_id_15nov13 not in ( select end_user_id_15nov13 from sasdata.training);
+quit;
+
+
+
+
+data validation_log;
+set sasdata.validation;
+
+pred= exp(-2.4698 -0.1753*s7_usage_act - 0.2546 * in_sol_gt1 + 0.0829 * in_outstanding_yes +0.1094 * in_downsell_yes  - 0.7592*nps_pos_cor +5.04E-07*total_investment - 0.2702*in_open_yes)/(1+exp(-2.4698 -0.1753*s7_usage_act - 0.2546 * in_sol_gt1 + 0.0829 * in_outstanding_yes +0.1094 * in_downsell_yes  - 0.7592*nps_pos_cor +5.04E-07*total_investment - 0.2702*in_open_yes));
+
+run;
+
+
+
+proc univariate data= validation_log;
+var pred;
+output out= pred_dist_val pctlpre= p_ pctlpts= 10 20 30 40 50 60 70 80 90 100;
+run;
+
+
+
+
+data _null_;
+	set pred_dist_val;
+	if _n_=1 then do;
+call symput('p_10',p_10);
+call symput('p_20',p_20);
+call symput('p_30',p_30);
+call symput('p_40',p_40);
+call symput('p_50',p_50);
+call symput('p_60',p_60);
+call symput('p_70',p_70);
+call symput('p_80',p_80);
+call symput('p_90',p_90);
+call symput('p_100',p_100);
+end;
+run;
+
+
+
+
+data validation_pred;
+set validation_log;
+
+if pred<= &P_10. then decile=10;
+else if pred<= &P_20. then decile=9;
+else if pred<= &P_30. then decile=8;
+else if pred<= &P_40. then decile=7;
+else if pred<= &P_50. then decile=6;
+else if pred<= &P_60. then decile=5;
+else if pred<= &P_70. then decile=4;
+else if pred<= &P_80. then decile=3;
+else if pred<= &P_90. then decile=2;
+else decile=1;
+
+run;
+
+
+
+proc freq data= validation_pred;
+tables decile/list missing;
+run;
+
+
+
+
+proc sql;
+select decile, 
+count(end_user_id_15nov13) as total_eccid,
+count(case when lost=1 then end_user_id_15nov13 end) as lost
+from validation_pred
+group by 1;
+quit;
+
+
+
