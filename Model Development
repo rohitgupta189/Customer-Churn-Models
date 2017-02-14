@@ -1,0 +1,409 @@
+/* Checking the distribution of total DMA  investment */
+proc univariate data= masterdata;
+var total_investment;
+options missing= N;
+histogram total_investment;
+output out= dma_inv_univar pctlpre= p_ pctlpts= 10 20 30 40 50 60 70 80 90 100;
+run;
+
+
+
+/* Checking the distribution of  S7 investment */
+proc univariate data= masterdata;
+var s7_inv_2013;
+output out= s7_inv_univar;
+run;
+
+
+
+/* Checking the distribution of  Open Cases */
+proc univariate data= masterdata;
+var opencases;
+output out= open_cases_univar;
+run;
+
+
+/* Checking the distribution of  Customer tenure- Scene7 */
+proc univariate data= masterdata;
+var cust_tenure;
+output out= cust_tenure_univar;
+run;
+
+
+/* Checking the distribution of  Customer tenure- overall */
+proc univariate data= masterdata;
+var overall_cust_tenure;
+output out= over_cust_tenure_univar;
+run;
+
+
+
+/* Checking the distribution of  Total Outstanding */
+proc univariate data= masterdata;
+var total_outstanding;
+output out= total_outstanding_univar;
+run;
+
+
+/* Checking the distribution of  Total Outstanding */
+proc univariate data= masterdata;
+var total_cons_investment;
+output out= temp;
+run;
+
+
+
+
+
+
+
+
+
+
+
+/* Variable Groupings */
+data masterdata_wip;
+set masterdata;
+format no_sol $20.;
+
+/* solution penetration groupings */
+if solution_penetration=1 then no_sol="One";
+else no_sol="More than One";
+
+/* Total DMA investment groupings */
+if total_investment<= 11500 then total_investment_buck="less than 11500";
+else if total_investment<= 37000 then total_investment_buck="11500-37000";
+else if total_investment<= 135000 then total_investment_buck="37000-135000";
+else total_investment_buck="more than 135k";
+
+
+/* Average investment per solution */
+dma_inv_per_sol=total_investment/solution_penetration;
+
+/**/
+/**/
+/*if total_investment<= 37000 then test="le 37k";*/
+/*else test="more than 37k";*/
+
+
+/* s7 S7 investment groupings */
+if s7_inv_2013<= 9500 then s7_investment_buck="less than 9500";
+else if s7_inv_2013<= 30000 then s7_investment_buck="9500-30000";
+else if s7_inv_2013<= 94000 then s7_investment_buck="30000-94000";
+else s7_investment_buck="more than 94k";
+
+
+/* Open Cases groupings */
+/*if opencases<= 1 then open_cases_buck="<=1";*/
+/*else open_cases_buck="more than 1";*/
+
+if opencases> 0 then open_cases_buck="Yes";
+else open_cases_buck="No";
+
+
+/* S7-Customer Tenure groupings */
+
+/*if cust_tenure<= 26 then s7_cust_tenure_buck="<=26";*/
+/*else s7_cust_tenure_buck="more than 26";*/
+
+/*if cust_tenure<= 16 then s7_cust_tenure_buck="<=16";*/
+/*else s7_cust_tenure_buck="more than 16";*/
+
+if cust_tenure<= 12 then s7_cust_tenure_buck="<=12";
+else s7_cust_tenure_buck="more than 12";
+
+/*if cust_tenure<= 6 then s7_cust_tenure_buck="<=6";*/
+/*else s7_cust_tenure_buck="more than 6";*/
+
+
+if overall_cust_tenure<= 12 then over_cust_tenure_buck="<=12";
+else over_cust_tenure_buck="more than 12";
+
+/* Total Outstanding Flag */
+if total_outstanding> 0 then total_outstanding_flag="Yes";
+else total_outstanding_flag="Z_No";
+
+if bucket_90plus> 0 then bucket_90plus_flag="Yes";
+else bucket_90plus_flag="No";
+
+if bucket_curr> 0 then bucket_curr_flag="Yes";
+else bucket_curr_flag="No";
+
+
+/*if total_outstanding=. then outstanding_test="Missing";*/
+/*else if total_outstanding<50000 then outstanding_test ="lt 50k";*/
+/*else outstanding_test ="gt 50k";*/
+
+if months_out>0 then months_outstanding="yes";
+else months_outstanding="no";
+
+
+
+/*if total_outstanding>= 23070 then total_outstanding_flag="High";*/
+/*else total_outstanding_flag="Low/No";*/
+
+
+/* S7 Overall Usage Flag */
+if s7_overall_status in ("Red","Black")  then s7_usage="Low";
+else if s7_overall_status in ("Green","Yellow")  then s7_usage="High";
+else s7_usage="Needs Investigation";
+
+
+
+/* S7 Abs Usage Flag */
+if s7_abs_status in ("3.high","2.med")  then s7_prod_usage="High";
+else if s7_abs_status in ("1.low","0.no usage")  then s7_prod_usage="Low";
+else s7_prod_usage="Needs Investigation";
+
+
+/* S7 Relative Usage Flag */
+if s7_rel_status in ("3.high","2.med")  then s7_rel_usage="High";
+else s7_rel_usage="Low";
+
+
+/* SC Overall Usage Flag */
+if sc_overall_usage_status =""  then sc_overall_usage="Missing";
+else sc_overall_usage="Present";
+
+
+if sc_overall_usage_status in( "Green","Yellow")  then sc_usage_high=1;
+else sc_usage_high=0;
+
+
+if sc_overall_usage_status not in( " ")  then sc_usage=1;
+else sc_usage=0;
+
+
+if sc_overall_usage_status not in( " ")  and tnt_overall_status not in (" ")  then sc_tnt_usage=1;
+else sc_tnt_usage=0;
+
+
+
+/* TNT Overall Usage Flag */
+if tnt_overall_status =""  then tnt_overall_usage="Missing";
+else tnt_overall_usage="Present";
+
+
+
+/* Licensing Customers Flag */
+if lic_cust =1  then licensing_cust_flag="Licensing Cust";
+else licensing_cust_flag="No";
+
+/*  Consulting Flag - Scene 7 */
+if total_cons_investment >0  then cons_flag="Yes";
+else cons_flag="No";
+
+if total_cons_investment >8500  then cons_gt8k_flag="Yes";
+else cons_gt8k_flag="No";
+
+
+
+/*  Training Flag - Scene 7 */
+if total_train_investment >0  then train_flag="Yes";
+else train_flag="No";
+
+
+run;
+
+
+
+proc sql;
+select sum(s7_inv_2013) from masterdata_wip
+where lost=1;
+quit;
+
+
+/* Freqs */
+proc freq data= masterdata_wip;
+tables industry_category / list missing ;
+run;
+
+
+
+
+
+/* Cramers V*/
+proc freq data= masterdata_wip;
+tables s7_overall_status * lost    / list missing  chisq;
+run;
+
+
+
+
+/* Creating Continous indicators to check pearson co-relation */
+data sasdata.in_master; 
+set masterdata_wip;
+
+if no_sol="One" then in_sol_one=1; else in_sol_one=0;
+if no_sol="More than One" then in_sol_gt1=1; else in_sol_gt1=0;
+
+if open_cases_buck="Yes" then in_open_yes=1; else in_open_yes=0;
+if open_cases_buck="No" then in_open_no=1; else in_open_no=0;
+
+if s7_cust_tenure_buck="<=12" then in_s7tenure_lt1=1; else in_s7tenure_lt1=0;
+if s7_cust_tenure_buck="more" then in_s7tenure_gt1=1; else in_s7tenure_gt1=0;
+
+
+if over_cust_tenure_buck="<=12" then in_over_tenure_lt1=1; else in_over_tenure_lt1=0;
+if over_cust_tenure_buck="more" then in_over_tenure_gt1=1; else in_over_tenure_gt1=0;
+
+if total_outstanding_flag="Yes" then in_outstanding_yes=1; else in_outstanding_yes=0;
+if total_outstanding_flag="No" then in_outstanding_no=1; else in_outstanding_no=0;
+
+if downsell_ind="Yes" then in_downsell_yes=1; else in_downsell_yes=0;
+if downsell_ind="No" then in_downsell_no=1; else in_downsell_no=0;
+if downsell_ind="Not present in 2012" then in_downsell_newcust=1;else in_downsell_newcust=0;
+
+if licensing_cust_flag="Licensing Cust" then in_licensing_yes=1; else in_licensing_yes=0;
+if licensing_cust_flag="No" then in_licensing_no=1; else in_licensing_no=0;
+
+
+if cons_flag="Yes" then in_cons_yes=1; else in_cons_yes=0;
+if cons_flag="No" then in_cons_no=1; else in_cons_no=0;
+
+if train_flag="Yes" then in_train_yes=1; else in_train_yes=0;
+if train_flag="No" then in_train_no=1; else in_train_no=0;
+
+
+if total_investment_buck="less than 11500" then in_dmainv_lt11500=1; else in_dmainv_lt11500=0;
+if total_investment_buck="11500-37000" then in_dmainv_11500to37000=1; else in_dmainv_11500to37000=0;
+if total_investment_buck="37000-135000" then in_dmainv_37000to135000=1;else in_dmainv_37000to135000=0;
+if total_investment_buck="more than 135k" then in_dmainv_mt135k=1;else in_dmainv_mt135k=0;
+
+if s7_investment_buck="less than 9500" then in_s7inv_lt9500=1; else in_s7inv_lt9500=0;
+if s7_investment_buck="9500-30000" then in_s7inv_9500to30000=1; else in_s7inv_9500to30000=0;
+if s7_investment_buck="30000-94000" then in_s7inv_30000to94000=1;else in_s7inv_30000to94000=0;
+if s7_investment_buck="more than 94k" then in_s7inv_mt94k=1;else in_s7inv_mt94k=0;
+
+
+if s7_usage="Hig" then in_s7_usage_high=1; else in_s7_usage_high=0;
+if s7_usage="Low" then in_s7_usage_low=1; else in_s7_usage_low=0;
+if s7_usage="Nee" then in_s7_usage_needsinv=1;else in_s7_usage_needsinv=0;
+
+if s7_status in ("Active")  then s7_usage_act=1;
+else s7_usage_act=0;
+
+if s7_status in ("Active")  then s7_usage_active="1";
+else s7_usage_active="Z_0";
+
+
+
+
+if sc_overall_usage="Missing" then in_sc_usage_missing=1; else in_sc_usage_missing=0;
+if sc_overall_usage="Present" then in_sc_usage_present=1; else in_sc_usage_present=0;
+
+
+if tnt_overall_usage="Missing" then in_tnt_usage_missing=1; else in_tnt_usage_missing=0;
+if tnt_overall_usage="Present" then in_tnt_usage_present=1; else in_tnt_usage_present=0;
+
+if s7_prod_usage="High" then in_s7_produsage_high=1; else in_s7_produsage_high=0;
+if s7_prod_usage="Low" then in_s7_produsage_low=1; else in_s7_produsage_low=0;
+if s7_prod_usage="Need" then in_s7_produsage_needsinv=1;else in_s7_produsage_needsinv=0;
+
+
+if s7_rel_usage="High" then in_s7_relusage_high=1; else in_s7_relusage_high=0;
+if s7_rel_usage="Low" then in_s7_relusage_low=1; else in_s7_relusage_low=0;
+
+if nps_fy14>0 then nps_pos="1"; else nps_pos="Z_0";
+if nps_fy14>0 then nps_pos_cor=1; else nps_pos_cor=0;
+
+/* Model Usage */
+if s7_usage="Hig" then s7_usage_high_med="1"; 
+else s7_usage_high_med="z_0";
+
+if downsell_ind="Yes" then downsell="1.Yes"; 
+else if downsell_ind="No" then downsell="Z_2.No"; 
+else downsell="3.New Custoemrs"; 
+
+if open_cases_buck="Yes" then open_cases="Yes"; 
+else open_cases="Z_No"; 
+
+
+if total_investment<3000  then total_inv_dec1=1; else total_inv_dec1=0;
+if total_investment<7700  then total_inv_dec2=1; else total_inv_dec2=0;
+if total_investment<15000  then total_inv_dec3=1; else total_inv_dec3=0;
+if total_investment<23000  then total_inv_dec4=1; else total_inv_dec4=0;
+if total_investment>390000  then total_inv_last=1; else total_inv_last=0;
+
+run;
+
+
+/**/
+/*proc freq data= sasdata.in_master;*/
+/*tables total_inv_dec1 /list missing;*/
+/*run;*/
+/**/
+
+
+proc freq data= sasdata.in_master;
+tables nps_pos /list missing;
+run;
+
+
+
+/* Cramers V*/
+proc freq data= sasdata.in_master;
+tables lost *  in_downsell_yes / list missing ;
+run;
+
+
+
+/* Multi- Collinearity */
+
+
+proc corr data=sasdata.in_master outp= new_corr_dataset; 
+
+var
+/*in_sol_one*/
+in_sol_gt1
+in_open_yes
+/*in_open_no*/
+in_s7tenure_lt1
+/*in_s7tenure_gt1*/
+in_over_tenure_lt1
+/*in_over_tenure_gt1*/
+in_outstanding_yes
+/*in_outstanding_no*/
+in_downsell_yes
+/*in_downsell_no*/
+in_downsell_newcust
+in_licensing_yes
+nps_pos_cor
+/*in_licensing_no*/
+in_cons_yes
+/*in_cons_no*/
+in_train_yes
+/*in_train_no*/
+/*in_dmainv_lt11500*/
+/*in_dmainv_11500to37000*/
+/*in_dmainv_37000to135000*/
+/*in_dmainv_mt135k*/
+total_investment
+s7_inv_2013
+/*in_s7inv_lt9500*/
+/*in_s7inv_9500to30000*/
+/*in_s7inv_30000to94000*/
+/*in_s7inv_mt94k*/
+in_s7_usage_high
+/*in_s7_usage_low*/
+/*in_s7_usage_needsinv*/
+in_s7_produsage_high
+/*in_s7_produsage_low*/
+/*in_s7_produsage_needsinv*/
+in_s7_relusage_high
+/*in_s7_relusage_low*/
+/*in_sc_usage_missing*/
+in_sc_usage_present
+/*in_tnt_usage_missing*/
+in_tnt_usage_present
+;run;
+
+
+
+data sasdata.multi_cor_check(drop= _type_);
+set new_corr_dataset(where=(_type_ not in ("MEAN","STD","N")));
+run;
+
+
+proc export data= sasdata.multi_cor_check outfile= "C:\Rohit\AGS Analytics\Scene 7 Propensity\output\multi_cor_check.csv" dbms=csv replace;
+run;
